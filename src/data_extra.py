@@ -49,12 +49,36 @@ def _fetch_worldbank(series_id: str, start: str, end: str | None) -> pd.DataFram
         data = r.json()
         if not isinstance(data, list) or len(data) < 2:
             return pd.DataFrame(columns=["value"])
-        rows = data[1]
-        out = pd.DataFrame(rows)[["date", "value"]].dropna()
+        out = pd.DataFrame(data[1])[["date", "value"]].dropna()
         out["date"] = pd.to_datetime(out["date"] + "-12-31", errors="coerce")
         out = out.dropna().set_index("date").sort_index()
         out = out[(out.index >= pd.Timestamp(start)) & (out.index <= pd.Timestamp(end) if end else True)]
         return out[["value"]]
+    except Exception:
+        return pd.DataFrame(columns=["value"])
+
+
+def _fetch_eurostat(series_id: str, start: str, end: str | None) -> pd.DataFrame:
+    # series_id format: dataset?param=val&param=val
+    try:
+        dataset, _, query = series_id.partition("?")
+        url = f"https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/{dataset}"
+        if query:
+            url = f"{url}?{query}"
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        js = r.json()
+        vals = js.get("value", {})
+        if not vals:
+            return pd.DataFrame(columns=["value"])
+        time_map = js.get("dimension", {}).get("time", {}).get("category", {}).get("index", {})
+        rev = {v: k for k, v in time_map.items()}
+        out = pd.DataFrame({"idx": list(vals.keys()), "value": list(vals.values())})
+        out["idx"] = out["idx"].astype(int)
+        out["date"] = pd.to_datetime(out["idx"].map(rev), errors="coerce")
+        out = out.dropna().set_index("date").sort_index()[["value"]]
+        out = out[(out.index >= pd.Timestamp(start)) & (out.index <= pd.Timestamp(end) if end else True)]
+        return out
     except Exception:
         return pd.DataFrame(columns=["value"])
 
@@ -73,7 +97,7 @@ def _fetch_bundesbank(series_id: str, start: str, end: str | None) -> pd.DataFra
 
 @st.cache_data(ttl=21600)
 def resolve_series(concept: str, region: str, start: str, end: str | None = None, prefer_monthly: bool = True, provider_flags: dict | None = None):
-    provider_flags = provider_flags or {"OECD": True, "TREASURY": True, "ECB": True, "BUNDESBANK": True, "WORLDBANK": True}
+    provider_flags = provider_flags or {"OECD": True, "TREASURY": True, "ECB": True, "BUNDESBANK": True, "WORLDBANK": True, "EUROSTAT": True}
     lineage: list[dict] = []
     best_df = pd.DataFrame(columns=["value"])
     best_meta = {"concept": concept, "region": region, "source": "NONE", "series_id": "", "lineage": []}
@@ -96,6 +120,8 @@ def resolve_series(concept: str, region: str, start: str, end: str | None = None
                 df = _fetch_bundesbank(sid, start, end)
             elif source == "WORLDBANK":
                 df = _fetch_worldbank(sid, start, end)
+            elif source == "EUROSTAT":
+                df = _fetch_eurostat(sid, start, end)
             else:
                 df = pd.DataFrame(columns=["value"])
 

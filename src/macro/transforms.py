@@ -39,14 +39,12 @@ def apply_transform(s: pd.Series, transform: str) -> pd.Series:
         out = yoy(s)
     elif transform == "mom":
         out = mom(s)
-    elif transform.startswith("zscore_"):
-        w = int(transform.split("_")[1])
-        out = zscore(s, w)
     elif transform.startswith("zscore_") and transform.endswith("_inv"):
         w = int(transform.split("_")[1])
         out = -zscore(s, w)
-    elif transform == "zscore_36_inv":
-        out = -zscore(s, 36)
+    elif transform.startswith("zscore_"):
+        w = int(transform.split("_")[1])
+        out = zscore(s, w)
     else:
         out = s
     return winsorize(out).dropna()

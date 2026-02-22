@@ -48,7 +48,7 @@ CONCEPT_PRIORITY = {
     "hy_yield": ["FRED:BAMLH0A0HYM2SYTW"],
     "ig_yield": ["FRED:BAMLC0A0CMEY"],
     "euro_inflation": ["FRED:CP0000EZ19M086NEST", "FRED:CPHPTT01EZM659N", "ECB:EA_HICP", "OECD:CPALTT01EZM661S"],
-    "euro_unemployment": ["FRED:LRHUTTTTEZM156S", "FRED:UNRTEU", "ECB:EA_UNEMP"],
+    "euro_unemployment": ["FRED:LRHUTTTTEZM156S", "EUROSTAT:une_rt_m?geo=EA19&sex=T&age=Y15-74&s_adj=SA&unit=PC_ACT", "FRED:UNRTEU", "ECB:EA_UNEMP"],
     "euro_cli": ["FRED:OECDELOLITONOSTSAM", "OECD:LOLITOAAEA"],
 
     "hard_us_ip": ["FRED:INDPRO"],

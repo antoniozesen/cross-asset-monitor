@@ -109,3 +109,81 @@ indicators:
     pillar: FINANCIAL
     transform: zscore_252
     weight: 1.0
+
+  - id: us_nfib
+    display_name: US NFIB Small Business Optimism
+    source: FRED
+    source_key: SBOITOTLQ163S
+    country: US
+    frequency: Q
+    type: SOFT
+    timing: LEADING
+    pillar: GROWTH
+    transform: zscore_36
+    weight: 0.8
+  - id: us_pmi_proxy
+    display_name: US ISM PMI Proxy
+    source: FRED
+    source_key: NAPM
+    country: US
+    frequency: M
+    type: SOFT
+    timing: LEADING
+    pillar: GROWTH
+    transform: zscore_36
+    weight: 1.0
+  - id: eu_unemployment
+    display_name: Euro Area Unemployment
+    source: FRED
+    source_key: LRHUTTTTEZM156S
+    country: EA
+    frequency: M
+    type: HARD
+    timing: LAGGING
+    pillar: LABOR
+    transform: zscore_36_inv
+    weight: 1.0
+  - id: eu_hicp
+    display_name: Euro Area HICP
+    source: FRED
+    source_key: CP0000EZ19M086NEST
+    country: EA
+    frequency: M
+    type: HARD
+    timing: LAGGING
+    pillar: INFLATION
+    transform: yoy
+    weight: 1.0
+  - id: eu_ip
+    display_name: Euro Area Industrial Production
+    source: FRED
+    source_key: PRMNTO01EZM661N
+    country: EA
+    frequency: M
+    type: HARD
+    timing: COINCIDENT
+    pillar: GROWTH
+    transform: yoy
+    weight: 1.0
+  - id: us_housing
+    display_name: US Housing Starts
+    source: FRED
+    source_key: HOUST
+    country: US
+    frequency: M
+    type: HARD
+    timing: LEADING
+    pillar: GROWTH
+    transform: yoy
+    weight: 0.8
+  - id: us_wages
+    display_name: US Average Hourly Earnings
+    source: FRED
+    source_key: CES0500000003
+    country: US
+    frequency: M
+    type: HARD
+    timing: LAGGING
+    pillar: INFLATION
+    transform: yoy
+    weight: 0.8

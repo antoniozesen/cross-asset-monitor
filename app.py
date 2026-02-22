@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
-import yaml
 
 from src.config import ALLOWED_TICKERS, RATIO_PAIRS, TICKER_NAMES
 from src.data_extra import resolve_series
+from src.data_fred import fetch_fred_series
 from src.data_sources.ecb_client import fetch_ecb_series
 from src.data_sources.eurostat_client import fetch_eurostat_series
 from src.data_sources.oecd_client import fetch_oecd_series
@@ -22,6 +22,7 @@ from src.regime import infer_regime
 from src.signals import build_signals
 from src.ui.how_we_compute import render_how_we_compute
 from src.utils import pct_rank, safe_div
+from src.macro.catalog_data import CATALOG_INDICATORS
 
 st.set_page_config(page_title="Cross-Asset Market Monitor", layout="wide")
 st.title("Cross-Asset Market Monitor")
@@ -39,8 +40,16 @@ def with_labels(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(ttl=21600)
 def load_macro_catalog(path: str = "src/macro/catalog.yaml") -> list[dict]:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f).get("indicators", [])
+    try:
+        import yaml  # optional runtime dependency
+        with open(path, "r", encoding="utf-8") as f:
+            loaded = yaml.safe_load(f) or {}
+            items = loaded.get("indicators", [])
+            if isinstance(items, list) and items:
+                return items
+    except Exception:
+        pass
+    return CATALOG_INDICATORS
 
 
 @st.cache_data(ttl=21600)
@@ -50,7 +59,6 @@ def fetch_catalog_data(catalog: list[dict], start: str, end: str | None) -> pd.D
         source = ind["source"]
         key = ind["source_key"]
         if source == "FRED":
-            from src.data_fred import fetch_fred_series
             df = fetch_fred_series(key, start, end)
         elif source == "OECD":
             df = fetch_oecd_series(key, start, end)
@@ -58,10 +66,7 @@ def fetch_catalog_data(catalog: list[dict], start: str, end: str | None) -> pd.D
             df = fetch_eurostat_series(key)
         elif source == "ECB":
             parts = key.split("/")
-            if len(parts) >= 3:
-                df = fetch_ecb_series(parts[1], "/".join(parts[2:]), start, end)
-            else:
-                df = pd.DataFrame(columns=["value"])
+            df = fetch_ecb_series(parts[1], "/".join(parts[2:]), start, end) if len(parts) >= 3 else pd.DataFrame(columns=["value"])
         else:
             df = pd.DataFrame(columns=["value"])
         if df.empty:
@@ -87,11 +92,12 @@ with st.sidebar:
         "OECD": st.toggle("OECD", value=True),
         "TREASURY": st.toggle("US Treasury", value=True),
         "ECB": st.toggle("ECB", value=True),
+        "EUROSTAT": st.toggle("Eurostat", value=True),
         "BUNDESBANK": st.toggle("Bundesbank", value=True),
         "WORLDBANK": st.toggle("World Bank", value=True),
     }
 
-# core market layer
+# market layer
 tickers = [t for t in ALLOWED_TICKERS if t != "MCHI" or include_mchi]
 prices = fetch_prices(tickers, str(start))
 if prices.empty:
@@ -103,7 +109,7 @@ monthly = features["monthly_ret"]
 signals = build_signals(features)
 benchmark_6040 = 0.6 * monthly.get("SPY", 0) + 0.4 * monthly.get("IEF", 0)
 
-# existing macro backbone
+# macro backbone
 macro, meta = {}, {}
 for concept in ["us_2y", "us_10y", "us_real_10y", "hy_oas", "ig_oas", "euro_inflation", "euro_unemployment"]:
     df, m = resolve_series(concept, "global", str(start), str(end), provider_flags=provider_flags)
@@ -111,45 +117,63 @@ for concept in ["us_2y", "us_10y", "us_real_10y", "hy_oas", "ig_oas", "euro_infl
 
 macro_df = pd.DataFrame(index=monthly.index)
 macro_df["growth"] = monthly.get("SPY", pd.Series(index=monthly.index, dtype=float)).rolling(6).mean()
-macro_df["inflation"] = macro.get("euro_inflation", pd.DataFrame(columns=["value"])).get("value", pd.Series(dtype=float)).reindex(monthly.index)
-macro_df["real_rates"] = macro.get("us_real_10y", pd.DataFrame(columns=["value"])).get("value", pd.Series(dtype=float)).reindex(monthly.index)
-macro_df["slope"] = (macro.get("us_10y", pd.DataFrame(columns=["value"])).get("value", pd.Series(dtype=float)) - macro.get("us_2y", pd.DataFrame(columns=["value"])).get("value", pd.Series(dtype=float))).reindex(monthly.index)
-macro_df["stress"] = macro.get("hy_oas", pd.DataFrame(columns=["value"])).get("value", pd.Series(dtype=float)).reindex(monthly.index)
+macro_df["inflation"] = macro["euro_inflation"].get("value", pd.Series(dtype=float)).reindex(monthly.index)
+macro_df["real_rates"] = macro["us_real_10y"].get("value", pd.Series(dtype=float)).reindex(monthly.index)
+macro_df["slope"] = (macro["us_10y"].get("value", pd.Series(dtype=float)) - macro["us_2y"].get("value", pd.Series(dtype=float))).reindex(monthly.index)
+macro_df["stress"] = macro["hy_oas"].get("value", pd.Series(dtype=float)).reindex(monthly.index)
+macro_df["inflation"] = macro_df["inflation"].fillna(monthly.get("BZ=F", pd.Series(index=monthly.index, dtype=float)).pct_change(12) * 100)
+macro_df["stress"] = macro_df["stress"].fillna((safe_div(features["monthly_px"].get("LQD", pd.Series(dtype=float)), features["monthly_px"].get("HYG", pd.Series(dtype=float))) - 1).reindex(monthly.index))
 macro_df = macro_df.interpolate(limit_direction="both")
+
 probs, regime_state = infer_regime(macro_df)
 stress_pct = pct_rank(macro_df["stress"]).dropna()
 reco = recommend_weights(monthly, profile, probs.dropna().iloc[-1] if not probs.dropna().empty else pd.Series(), float(stress_pct.iloc[-1] / 100 if not stress_pct.empty else 0.5), flex=flex)
 
-pct_dash = pd.DataFrame({
-    "SPY": pct_rank((1 + monthly.get("SPY", 0)).cumprod()),
-    "VGK": pct_rank((1 + monthly.get("VGK", 0)).cumprod()),
-    "HYG/LQD": pct_rank(safe_div(features["monthly_px"].get("HYG", pd.Series(dtype=float)), features["monthly_px"].get("LQD", pd.Series(dtype=float)))),
-    "US 10Y-2Y": pct_rank(macro_df["slope"]),
-}).dropna(how="all")
-
-# new macro layer
+# macro layer
 catalog = load_macro_catalog()
 macro_tidy = fetch_catalog_data(catalog, str(start), str(end))
 composites, contrib = build_composites(macro_tidy)
 
+# fallback regime probs from macro composites if infer_regime is insufficient
+macro_regime_fallback = pd.DataFrame()
+if "US|GROWTH" in composites.columns and "US|INFLATION" in composites.columns:
+    macro_regime_fallback = regime_probabilities(composites["US|GROWTH"], composites["US|INFLATION"], sigma=1.0)
+
+# valuation metrics (best effort)
+val_raw = pd.DataFrame(index=monthly.index)
+for sid, col in [("DGS10", "us10y"), ("FEDFUNDS", "fedfunds"), ("T10YIE", "breakeven10y"), ("BAMLH0A0HYM2", "hy_oas"), ("BAMLC0A0CM", "ig_oas"), ("CAPE", "cape"), ("SP500", "spx")]:
+    s = fetch_fred_series(sid, str(start), str(end))
+    val_raw[col] = s.get("value", pd.Series(dtype=float)).reindex(monthly.index)
+val_raw["hyg_lqd"] = safe_div(features["monthly_px"].get("HYG", pd.Series(dtype=float)), features["monthly_px"].get("LQD", pd.Series(dtype=float))).reindex(monthly.index)
+val_raw["equity_risk_premium_proxy"] = (1 / val_raw["cape"]).replace([pd.NA, float("inf")], pd.NA) * 100 - val_raw["us10y"]
+val_raw["yardeni_proxy"] = val_raw["equity_risk_premium_proxy"] - val_raw["fedfunds"]
+val_pct = val_raw.apply(pct_rank).dropna(how="all")
+
+pct_dash = pd.DataFrame({
+    "SPY": pct_rank((1 + monthly.get("SPY", 0)).cumprod()),
+    "VGK": pct_rank((1 + monthly.get("VGK", 0)).cumprod()),
+    "HYG/LQD": pct_rank(val_raw["hyg_lqd"]),
+    "US 10Y-2Y": pct_rank(macro_df["slope"]),
+}).dropna(how="all")
+
 bad = check_allowed_tickers(tickers)
 ratio_missing = check_required_ratios(prices)
 
-# tabs
 tabs = st.tabs(["Overview", "Regime", "Markets", "Signals", "Comparatives", "Valuation", "Allocation", "Narrative", "Macro (Hard/Soft)", "How we compute", "Sources"])
 
 with tabs[0]:
     latest_reg = regime_state.dropna().iloc[-1] if not regime_state.dropna().empty else "N/A"
-    cols = st.columns(5)
-    for i, (k, v) in enumerate({"Assets": prices.shape[1], "Obs": prices.shape[0], "Regime": latest_reg, "Missing ratios": len(ratio_missing), "Forbidden tickers": len(bad)}.items()):
-        cols[i].metric(k, v)
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Assets", prices.shape[1]); c2.metric("Obs", prices.shape[0]); c3.metric("Regime", latest_reg); c4.metric("Missing ratios", len(ratio_missing)); c5.metric("Forbidden", len(bad))
     st.plotly_chart(heatmap(pct_dash.tail(12).T.fillna(50), "Cross-Asset Percentile Dashboard"), use_container_width=True)
-    st.plotly_chart(line(probs.tail(12), "Regime probabilities (1y)", "Probability"), use_container_width=True)
-    st.plotly_chart(line(with_labels(features["monthly_px"][["^GSPC", "^STOXX", "^N225"]].dropna()), "Main indices", "Level"), use_container_width=True)
 
 with tabs[1]:
-    st.plotly_chart(line(probs.tail(180), "Regime probabilities (15y)", "Probability"), use_container_width=True)
+    st.plotly_chart(line(probs.tail(180), "Primary regime probabilities", "%"), use_container_width=True)
+    if probs.dropna().empty and not macro_regime_fallback.empty:
+        st.warning("Primary regime engine has insufficient data; showing fallback macro regime probabilities.")
+    st.plotly_chart(line(macro_regime_fallback[["Reflation", "Goldilocks", "Stagflation", "Slowdown"]] if not macro_regime_fallback.empty else pd.DataFrame(), "Fallback macro regime probabilities", "%"), use_container_width=True)
     st.plotly_chart(line(macro_df[["growth", "inflation", "real_rates", "slope", "stress"]], "Regime drivers", "z/level"), use_container_width=True)
+    st.write(f"EU unemployment source used: {meta.get('euro_unemployment', {}).get('source', 'N/A')} | series: {meta.get('euro_unemployment', {}).get('series_id', 'N/A')}")
     st.write(f"- Probability check: {'ok' if check_regime_probs(probs.dropna()) else 'fail'}")
 
 with tabs[2]:
@@ -158,21 +182,24 @@ with tabs[2]:
     st.plotly_chart(heatmap(with_labels(features["monthly_ret"][b].tail(12).T.fillna(0)), "Indices monthly returns"), use_container_width=True)
 
 with tabs[3]:
-    latest_s = signals[signals["date"] == signals["date"].max()].copy()
-    latest_s["ticker"] = latest_s["ticker"].map(label)
-    st.plotly_chart(bars(latest_s.sort_values("mom_12m"), "ticker", "mom_12m", "Momentum 12m"), use_container_width=True)
+    latest = signals[signals["date"] == signals["date"].max()].copy()
+    latest["ticker"] = latest["ticker"].map(label)
+    st.plotly_chart(bars(latest.sort_values("mom_3m"), "ticker", "mom_3m", "Momentum 3m"), use_container_width=True)
+    st.plotly_chart(bars(latest.sort_values("mom_6m"), "ticker", "mom_6m", "Momentum 6m"), use_container_width=True)
+    st.plotly_chart(bars(latest.sort_values("mom_12m"), "ticker", "mom_12m", "Momentum 12m"), use_container_width=True)
+    st.plotly_chart(bars(latest.sort_values("vol_12m"), "ticker", "vol_12m", "Volatility 12m"), use_container_width=True)
+    st.plotly_chart(heatmap(latest.set_index("ticker")[["mom_pct", "vol_pct", "dd_pct"]].T.fillna(50), "Signals percentiles"), use_container_width=True)
 
 with tabs[4]:
     ratio_name = st.selectbox("Ratio", list(RATIO_PAIRS.keys()), index=0)
     a, b = RATIO_PAIRS[ratio_name]
     ratio = safe_div(features["monthly_px"][a], features["monthly_px"][b]).dropna()
-    rret = ratio.pct_change()
-    st.plotly_chart(line(pd.DataFrame({"ratio": ratio, "pct": pct_rank(ratio)}), f"{ratio_name}", "ratio / pct"), use_container_width=True)
-    st.plotly_chart(line(pd.DataFrame({"corr_spy": rret.rolling(12).corr(monthly.get("SPY")), "corr_6040": rret.rolling(12).corr(benchmark_6040)}), "Rolling corr", "corr"), use_container_width=True)
+    st.plotly_chart(line(pd.DataFrame({"ratio": ratio, "pct": pct_rank(ratio)}), ratio_name, "ratio/pct"), use_container_width=True)
 
 with tabs[5]:
-    val = pd.DataFrame({"slope": pct_rank(macro_df["slope"]), "real": pct_rank(macro_df["real_rates"]), "stress": pct_rank(macro_df["stress"])})
-    st.plotly_chart(heatmap(val.tail(36).T.fillna(50), "Valuation Dashboard"), use_container_width=True)
+    st.plotly_chart(heatmap(val_pct.tail(60).T.fillna(50), "Valuation percentile dashboard"), use_container_width=True)
+    st.plotly_chart(line(val_raw[["us10y", "fedfunds", "breakeven10y", "hy_oas", "ig_oas"]].dropna(how="all"), "Rates & credit valuation inputs", "%/bps"), use_container_width=True)
+    st.plotly_chart(line(val_raw[["cape", "equity_risk_premium_proxy", "yardeni_proxy"]].dropna(how="all"), "ERP / Yardeni / CAPE proxies", "level"), use_container_width=True)
 
 with tabs[6]:
     rp = reco.copy(); rp["ticker"] = rp["ticker"].map(label)
@@ -189,29 +216,31 @@ with tabs[7]:
 
 with tabs[8]:
     st.subheader("Macro Layer (Hard/Soft)")
+    macro_start = st.date_input("Macro start", value=pd.Timestamp(start), key="macro_start")
+    macro_end = st.date_input("Macro end", value=pd.Timestamp(end), key="macro_end")
     countries = sorted(macro_tidy["country"].dropna().unique().tolist()) if not macro_tidy.empty else []
-    selected_countries = st.multiselect("Countries", countries, default=countries[:2] if countries else [])
+    selected_countries = st.multiselect("Countries", countries, default=countries)
     timing_filter = st.multiselect("Timing", ["LEADING", "COINCIDENT", "LAGGING"], default=["LEADING", "COINCIDENT", "LAGGING"])
     type_filter = st.multiselect("Type", ["HARD", "SOFT"], default=["HARD", "SOFT"])
     pillar_filter = st.multiselect("Pillar", ["GROWTH", "INFLATION", "LABOR", "FINANCIAL"], default=["GROWTH", "INFLATION", "LABOR", "FINANCIAL"])
 
     filt = macro_tidy.copy()
     if not filt.empty:
+        filt = filt[(filt["date"] >= pd.Timestamp(macro_start)) & (filt["date"] <= pd.Timestamp(macro_end))]
         filt = filt[filt["country"].isin(selected_countries) & filt["timing"].isin(timing_filter) & filt["type"].isin(type_filter) & filt["pillar"].isin(pillar_filter)]
     if filt.empty:
-        st.warning("No macro data available for current filters.")
+        st.warning("No macro data available for current filters/date range.")
     else:
         wide = filt.pivot_table(index="date", columns="display_name", values="value_t")
-        st.plotly_chart(line(wide.resample("D").ffill(), "Indicator evolution (daily aligned)", "transformed value"), use_container_width=True)
+        st.plotly_chart(line(wide.resample("D").ffill(), "Indicator evolution (daily aligned)", "transformed"), use_container_width=True)
 
         comp_cols = [c for c in composites.columns if any(c.startswith(f"{ctry}|") for ctry in selected_countries)]
-        if comp_cols:
-            st.plotly_chart(line(composites[comp_cols], "Country composites (z-index)", "z"), use_container_width=True)
+        comp_window = composites.loc[(composites.index >= pd.Timestamp(macro_start)) & (composites.index <= pd.Timestamp(macro_end)), comp_cols] if comp_cols else pd.DataFrame()
+        st.plotly_chart(line(comp_window, "Composites by country", "z"), use_container_width=True)
 
-        # regime probabilities per selected country using growth/inflation pillars
         for c in selected_countries:
-            gz = composites.get(f"{c}|GROWTH", pd.Series(dtype=float))
-            iz = composites.get(f"{c}|INFLATION", pd.Series(dtype=float))
+            gz = comp_window.get(f"{c}|GROWTH", pd.Series(dtype=float))
+            iz = comp_window.get(f"{c}|INFLATION", pd.Series(dtype=float))
             rp = regime_probabilities(gz, iz, sigma=1.0)
             if rp.empty:
                 continue
@@ -222,7 +251,7 @@ with tabs[8]:
             k4.metric(f"{c} Stagflation %", f"{rp['Stagflation'].iloc[-1]:.1f}")
             st.plotly_chart(line(rp[["Reflation", "Goldilocks", "Stagflation", "Slowdown"]], f"{c} regime probabilities", "%"), use_container_width=True)
 
-        snap = filt.sort_values("date").groupby("id").tail(1)[["display_name", "country", "value_t", "as_of", "source", "type", "timing", "pillar"]]
+        snap = filt.sort_values("date").groupby("id").tail(1)[["display_name", "country", "value_t", "as_of", "source", "type", "timing", "pillar", "ffill_applied"]]
         st.dataframe(snap.rename(columns={"value_t": "latest_transformed"}), use_container_width=True)
         contrib_latest = contrib[contrib["country"].isin(selected_countries)].sort_values("date").groupby(["country", "display_name"]).tail(1)
         st.dataframe(contrib_latest[["country", "display_name", "type", "timing", "weight", "value_t", "contribution", "source"]], use_container_width=True)
@@ -233,4 +262,3 @@ with tabs[9]:
 with tabs[10]:
     st.dataframe(pd.DataFrame(meta).T)
     st.dataframe(pd.DataFrame({"forbidden_tickers": [", ".join(bad) if bad else "none"], "missing_ratios": [len(ratio_missing)], "percentiles_ok": [check_percentiles(pct_dash.tail(12))], "regime_probs_ok": [check_regime_probs(probs.dropna())]}))
-    st.write("As-of and ffill flags in macro snapshot table under Macro tab.")
