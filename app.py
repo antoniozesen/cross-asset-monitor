@@ -58,16 +58,19 @@ def fetch_catalog_data(catalog: list[dict], start: str, end: str | None) -> pd.D
     for ind in catalog:
         source = ind["source"]
         key = ind["source_key"]
-        if source == "FRED":
-            df = fetch_fred_series(key, start, end)
-        elif source == "OECD":
-            df = fetch_oecd_series(key, start, end)
-        elif source == "EUROSTAT":
-            df = fetch_eurostat_series(key)
-        elif source == "ECB":
-            parts = key.split("/")
-            df = fetch_ecb_series(parts[1], "/".join(parts[2:]), start, end) if len(parts) >= 3 else pd.DataFrame(columns=["value"])
-        else:
+        try:
+            if source == "FRED":
+                df = fetch_fred_series(key, start, end)
+            elif source == "OECD":
+                df = fetch_oecd_series(key, start, end)
+            elif source == "EUROSTAT":
+                df = fetch_eurostat_series(key)
+            elif source == "ECB":
+                parts = key.split("/")
+                df = fetch_ecb_series(parts[1], "/".join(parts[2:]), start, end) if len(parts) >= 3 else pd.DataFrame(columns=["value"])
+            else:
+                df = pd.DataFrame(columns=["value"])
+        except Exception:
             df = pd.DataFrame(columns=["value"])
         if df.empty:
             continue
