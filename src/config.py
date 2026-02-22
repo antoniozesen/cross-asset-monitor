@@ -11,13 +11,19 @@ ALLOWED_TICKERS = [
 
 TICKER_NAMES = {t: t for t in ALLOWED_TICKERS}
 TICKER_NAMES.update({
-    "SPY": "SPDR S&P 500 ETF", "VGK": "Vanguard FTSE Europe ETF", "EWJ": "iShares MSCI Japan ETF",
-    "IEMG": "iShares Core MSCI EM ETF", "TLT": "iShares 20+ Year Treasury Bond ETF", "IEF": "iShares 7-10 Year Treasury ETF",
-    "LQD": "iShares iBoxx $ Investment Grade Corporate Bond ETF", "HYG": "iShares iBoxx $ High Yield Corporate Bond ETF",
-    "GLD": "SPDR Gold Shares", "^GSPC": "S&P 500 Index", "^STOXX": "STOXX Europe 600 Index",
-    "^GDAXI": "DAX Index", "IVE": "iShares S&P 500 Value ETF", "IVW": "iShares S&P 500 Growth ETF",
-    "CV9.PA": "Amundi MSCI Europe Value", "CG9.PA": "Amundi MSCI Europe Growth", "BZ=F": "Brent Crude Futures",
-    "CL=F": "WTI Crude Futures", "GC=F": "Gold Futures",
+    "SPY": "SPDR S&P 500 ETF", "VGK": "Vanguard FTSE Europe ETF", "EWJ": "iShares MSCI Japan ETF", "IEMG": "iShares Core MSCI EM ETF",
+    "XLK": "Technology Select Sector SPDR", "XLF": "Financial Select Sector SPDR", "XLI": "Industrial Select Sector SPDR",
+    "XLV": "Health Care Select Sector SPDR", "XLP": "Consumer Staples Select Sector SPDR", "XLU": "Utilities Select Sector SPDR",
+    "XLE": "Energy Select Sector SPDR", "XLB": "Materials Select Sector SPDR", "XLY": "Consumer Discretionary Select Sector SPDR",
+    "XLRE": "Real Estate Select Sector SPDR", "XLC": "Communication Services Select Sector SPDR",
+    "QUAL": "iShares MSCI USA Quality Factor ETF", "MTUM": "iShares MSCI USA Momentum Factor ETF", "USMV": "iShares MSCI USA Min Vol ETF",
+    "TLT": "iShares 20+ Year Treasury Bond ETF", "IEF": "iShares 7-10 Year Treasury ETF", "LQD": "iShares IG Corp Bond ETF",
+    "HYG": "iShares High Yield Corp Bond ETF", "GLD": "SPDR Gold Shares", "SHY": "iShares 1-3Y Treasury ETF", "IEI": "iShares 3-7Y Treasury ETF",
+    "^GSPC": "S&P 500 Index", "^IXIC": "NASDAQ Composite", "^DJI": "Dow Jones Industrial Average", "^RUT": "Russell 2000",
+    "^STOXX": "STOXX Europe 600", "^GDAXI": "DAX 40", "^FCHI": "CAC 40", "^IBEX": "IBEX 35", "^FTSE": "FTSE 100",
+    "FTSEMIB.MI": "FTSE MIB", "^N225": "Nikkei 225", "^HSI": "Hang Seng Index",
+    "EURUSD=X": "EUR/USD", "EURGBP=X": "EUR/GBP", "EURJPY=X": "EUR/JPY", "USDJPY=X": "USD/JPY", "GBPUSD=X": "GBP/USD", "USDCHF=X": "USD/CHF",
+    "GC=F": "Gold Futures", "SI=F": "Silver Futures", "BZ=F": "Brent Crude Futures", "CL=F": "WTI Crude Futures", "NG=F": "Natural Gas Futures", "HG=F": "Copper Futures",
 })
 
 PROFILE_ANCHORS = {
@@ -32,23 +38,18 @@ MAX_STALENESS_DAYS_MONTHLY = 60
 MAX_MISSINGNESS_AFTER_RESAMPLE = 0.10
 
 CONCEPT_PRIORITY = {
-    "us_3m": ["FRED:DTB3", "TREASURY:DGS3MO"],
+    "us_3m": ["FRED:DTB3", "FRED:DGS3MO", "TREASURY:DGS3MO"],
     "us_2y": ["FRED:DGS2", "TREASURY:DGS2"],
     "us_10y": ["FRED:DGS10", "TREASURY:DGS10"],
     "us_30y": ["FRED:DGS30", "TREASURY:DGS30"],
-    "us_real_10y": ["FRED:DFII10", "TREASURY:REAL10Y"],
-    "ger_2y": ["BUNDESBANK:GER2Y", "ECB:GER2Y", "FRED:IRLTLT01DEM156N"],
-    "ger_10y": ["BUNDESBANK:GER10Y", "ECB:GER10Y", "FRED:IRLTLT01DEM156N"],
-    "ger_30y": ["BUNDESBANK:GER30Y", "ECB:GER30Y"],
+    "us_real_10y": ["FRED:DFII10", "FRED:REAINTRATREARAT10Y", "TREASURY:REAL10Y"],
     "hy_oas": ["FRED:BAMLH0A0HYM2"],
     "ig_oas": ["FRED:BAMLC0A0CM"],
     "hy_yield": ["FRED:BAMLH0A0HYM2SYTW"],
     "ig_yield": ["FRED:BAMLC0A0CMEY"],
-    "euro_inflation": ["ECB:EA_HICP", "OECD:CPALTT01EZM661S"],
-    "euro_unemployment": ["ECB:EA_UNEMP", "FRED:LRHUTTTTEZM156S"],
-    "euro_cli": ["OECD:LOLITOAAEA", "FRED:OECDELOLITONOSTSAM"],
-    "japan_inflation": ["OECD:CPGRLE01JPM659N", "FRED:CPGRLE01JPQ657N"],
-    "commodities_impulse": ["WB_PINK:CRUDE_BRENT"],
+    "euro_inflation": ["FRED:CP0000EZ19M086NEST", "FRED:CPHPTT01EZM659N", "ECB:EA_HICP", "OECD:CPALTT01EZM661S"],
+    "euro_unemployment": ["FRED:LRHUTTTTEZM156S", "FRED:UNRTEU", "ECB:EA_UNEMP"],
+    "euro_cli": ["FRED:OECDELOLITONOSTSAM", "OECD:LOLITOAAEA"],
 }
 
 RATIO_PAIRS = {
