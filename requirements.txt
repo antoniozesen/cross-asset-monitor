@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+plotly
+yfinance
+fredapi
+scikit-learn
+scipy
+requests
+statsmodels
+PyYAML
