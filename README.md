@@ -44,3 +44,13 @@ Institutional-style Streamlit dashboard for cross-asset monitoring across equiti
 - Stock, J.H., & Watson, M.W. (1999). “Business cycle fluctuations in US macroeconomic time series.” *Handbook of Macroeconomics*.
 - DeMiguel, V., Garlappi, L., & Uppal, R. (2009). “Optimal Versus Naive Diversification.” *Review of Financial Studies*. https://doi.org/10.1093/rfs/hhm075
 - Black, F., & Litterman, R. (1992). “Global Portfolio Optimization.” *Financial Analysts Journal*.
+
+
+## New Macro Layer (Hard/Soft)
+- New tab **Macro (Hard/Soft)** with country selectors and taxonomy filters (type/timing/pillar).
+- Uses free official APIs only: OECD SDMX, Eurostat, ECB Data Portal, FRED (optional key), World Bank optional.
+- Includes indicator evolution, composites (growth/inflation), hard-vs-soft divergence, leading/coincident/lagging views, and 4-regime probabilities (Reflation/Goldilocks/Stagflation/Slowdown).
+- Includes **How we compute** tab with formulas and examples.
+
+## Secrets
+- Copy `secrets.example.toml` to Streamlit secrets and set `FRED_API_KEY` (optional but recommended).

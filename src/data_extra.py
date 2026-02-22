@@ -40,6 +40,25 @@ def _fetch_treasury(code: str, start: str, end: str | None) -> pd.DataFrame:
         return pd.DataFrame(columns=["value"])
 
 
+def _fetch_worldbank(series_id: str, start: str, end: str | None) -> pd.DataFrame:
+    try:
+        country, indicator = series_id.split("|", 1)
+        url = f"https://api.worldbank.org/v2/country/{country}/indicator/{indicator}?format=json&per_page=20000"
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        if not isinstance(data, list) or len(data) < 2:
+            return pd.DataFrame(columns=["value"])
+        rows = data[1]
+        out = pd.DataFrame(rows)[["date", "value"]].dropna()
+        out["date"] = pd.to_datetime(out["date"] + "-12-31", errors="coerce")
+        out = out.dropna().set_index("date").sort_index()
+        out = out[(out.index >= pd.Timestamp(start)) & (out.index <= pd.Timestamp(end) if end else True)]
+        return out[["value"]]
+    except Exception:
+        return pd.DataFrame(columns=["value"])
+
+
 def _fetch_oecd(series_id: str, start: str, end: str | None) -> pd.DataFrame:
     return pd.DataFrame(columns=["value"])
 
@@ -75,6 +94,8 @@ def resolve_series(concept: str, region: str, start: str, end: str | None = None
                 df = _fetch_ecb(sid, start, end)
             elif source == "BUNDESBANK":
                 df = _fetch_bundesbank(sid, start, end)
+            elif source == "WORLDBANK":
+                df = _fetch_worldbank(sid, start, end)
             else:
                 df = pd.DataFrame(columns=["value"])
 
