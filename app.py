@@ -38,6 +38,13 @@ def with_labels(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def safe_fred(series_id: str, start: str, end: str) -> pd.DataFrame:
+    try:
+        return fetch_fred_series(series_id, start, end)
+    except Exception:
+        return pd.DataFrame(columns=["value"])
+
+
 @st.cache_data(ttl=21600)
 def load_macro_catalog(path: str = "src/macro/catalog.yaml") -> list[dict]:
     try:
@@ -60,7 +67,7 @@ def fetch_catalog_data(catalog: list[dict], start: str, end: str | None) -> pd.D
         key = ind["source_key"]
         try:
             if source == "FRED":
-                df = fetch_fred_series(key, start, end)
+                df = safe_fred(key, start, end)
             elif source == "OECD":
                 df = fetch_oecd_series(key, start, end)
             elif source == "EUROSTAT":
@@ -145,7 +152,7 @@ if "US|GROWTH" in composites.columns and "US|INFLATION" in composites.columns:
 # valuation metrics (best effort)
 val_raw = pd.DataFrame(index=monthly.index)
 for sid, col in [("DGS10", "us10y"), ("FEDFUNDS", "fedfunds"), ("T10YIE", "breakeven10y"), ("BAMLH0A0HYM2", "hy_oas"), ("BAMLC0A0CM", "ig_oas"), ("CAPE", "cape"), ("SP500", "spx")]:
-    s = fetch_fred_series(sid, str(start), str(end))
+    s = safe_fred(sid, str(start), str(end))
     val_raw[col] = s.get("value", pd.Series(dtype=float)).reindex(monthly.index)
 val_raw["hyg_lqd"] = safe_div(features["monthly_px"].get("HYG", pd.Series(dtype=float)), features["monthly_px"].get("LQD", pd.Series(dtype=float))).reindex(monthly.index)
 val_raw["equity_risk_premium_proxy"] = (1 / val_raw["cape"]).replace([pd.NA, float("inf")], pd.NA) * 100 - val_raw["us10y"]
